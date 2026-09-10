@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <numeric>
 #include <memory>
+#include <cuda_runtime.h>
+#include <cmath>
 using namespace std;
 
 __global__ void gpuHello();
@@ -247,6 +249,99 @@ int main()
     cudaFree(d_A);
     cudaFree(d_B);
     cudaFree(d_C);
+
+    const int width  = 1920;
+    const int height = 1080;
+    const size_t N = static_cast<size_t>(width) * height;
+
+    // --------------------------------------------------
+    // 1. Allocate and initialize host memory
+    // --------------------------------------------------
+
+    std::vector<float> h_input(N);
+    std::vector<float> h_output(N, 0.0f);
+
+    for (size_t i = 0; i < N; ++i)
+        h_input[i] = static_cast<float>(i % 256);
+
+    // --------------------------------------------------
+    // 2. Allocate device memory
+    // --------------------------------------------------
+
+    float* d_input  = nullptr;
+    float* d_output = nullptr;
+
+    cudaMalloc(&d_input,  N * sizeof(float));
+    cudaMalloc(&d_output, N * sizeof(float));
+
+    // --------------------------------------------------
+    // 3. Copy input: CPU → GPU
+    // --------------------------------------------------
+
+    cudaMemcpy(
+        d_input,
+        h_input.data(),
+        N * sizeof(float),
+        cudaMemcpyHostToDevice
+    );
+
+    // --------------------------------------------------
+    // 4. Define block and grid
+    // --------------------------------------------------
+
+    dim3 block(16, 16);
+
+    dim3 grid(
+        (width  + block.x - 1) / block.x,
+        (height + block.y - 1) / block.y
+    );
+
+    // --------------------------------------------------
+    // 5. Launch kernel
+    // --------------------------------------------------
+
+    blur3x3_tiled<<<grid, block>>>(
+        d_input,
+        d_output,
+        width,
+        height
+    );
+
+    // --------------------------------------------------
+    // 6. Check for kernel launch errors
+    // --------------------------------------------------
+
+    cudaError_t err = cudaGetLastError();
+
+    if (err != cudaSuccess)
+    {
+        std::cerr << "Kernel launch failed: "
+                  << cudaGetErrorString(err)
+                  << '\n';
+
+        return 1;
+    }
+
+    // --------------------------------------------------
+    // 7. Copy result: GPU → CPU
+    // --------------------------------------------------
+
+    cudaMemcpy(
+        h_output.data(),
+        d_output,
+        N * sizeof(float),
+        cudaMemcpyDeviceToHost
+    );
+
+    // --------------------------------------------------
+    // 8. Cleanup
+    // --------------------------------------------------
+
+    cudaFree(d_input);
+    cudaFree(d_output);
+
+    std::cout << "Blur completed.\n";
+
     return 0;
 }
 
