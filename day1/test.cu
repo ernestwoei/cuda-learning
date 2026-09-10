@@ -10,6 +10,33 @@ using namespace std;
 __global__ void gpuHello();
 __global__ void gpuVectorAdd(float *a, float *b, float *c, size_t N);
 
+#define TILE_SIZE 16
+__global__ void blur3x3_tiled(  const float* input,
+                                float* output,
+                                int width,
+                                int height)
+{
+    // 16x16 output tile
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    // Global coordinates of this thread's output pixel
+    int x = blockIdx.x * blockDim.x + tx;
+    int y = blockIdx.y * blockDim.y + ty;
+
+    // 18x18 shared-memory tile:
+    // 16x16 center + 1-pixel halo on each side
+    __shared__ float tile[TILE_SIZE + 2][TILE_SIZE + 2];
+
+    // ------------------------------------------------
+    // 1. Load the center 16x16 pixels
+    // -----------------------------------------------
+    if (x < width && y < height)
+        tile[ty+1][tx+1] = input[y*width + x];
+    else
+        tile[ty+1][tx+1] = 0.0f;
+}
+
 // Custom deleter functor (callable object)
 // empty struct 0 bytes of memory inside unique_ptr due to C++ optimization Empty Base Optimization (EBO)
 // better than standard C-style function pointer example
