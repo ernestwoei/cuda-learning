@@ -9,6 +9,22 @@
 #include <cmath>
 using namespace std;
 
+#define CUDA_CHECK(call)                                                   \
+do {                                                                       \
+    cudaError_t err = (call);                                              \
+    if (err != cudaSuccess) {                                              \
+        std::cerr << "CUDA error at " << __FILE__ << ":" << __LINE__      \
+                  << "\n  " << cudaGetErrorString(err) << '\n';            \
+        std::exit(EXIT_FAILURE);                                           \
+    }                                                                      \
+} while (0)
+
+#define CUDA_KERNEL_CHECK()                                                \
+do {                                                                       \
+    CUDA_CHECK(cudaGetLastError());                                        \
+    CUDA_CHECK(cudaDeviceSynchronize());                                   \
+} while (0)
+
 __global__ void gpuHello();
 __global__ void gpuVectorAdd(float *a, float *b, float *c, size_t N);
 
@@ -271,19 +287,29 @@ int main()
     float* d_input  = nullptr;
     float* d_output = nullptr;
 
-    cudaMalloc(&d_input,  N * sizeof(float));
-    cudaMalloc(&d_output, N * sizeof(float));
+    CUDA_CHECK(cudaMalloc(
+        &d_input,
+        N * sizeof(float)
+    ));
+
+    CUDA_CHECK(cudaMalloc(
+        &d_output,
+        N * sizeof(float)
+    ));
+
 
     // --------------------------------------------------
     // 3. Copy input: CPU → GPU
     // --------------------------------------------------
 
-    cudaMemcpy(
+    // CPU → GPU
+    CUDA_CHECK(cudaMemcpy(
         d_input,
         h_input.data(),
         N * sizeof(float),
         cudaMemcpyHostToDevice
-    );
+    ));
+
 
     // --------------------------------------------------
     // 4. Define block and grid
@@ -307,6 +333,9 @@ int main()
         height
     );
 
+    // Check both launch and execution
+    CUDA_KERNEL_CHECK();
+
     // --------------------------------------------------
     // 6. Check for kernel launch errors
     // --------------------------------------------------
@@ -326,19 +355,21 @@ int main()
     // 7. Copy result: GPU → CPU
     // --------------------------------------------------
 
-    cudaMemcpy(
+    // GPU → CPU
+    CUDA_CHECK(cudaMemcpy(
         h_output.data(),
         d_output,
         N * sizeof(float),
         cudaMemcpyDeviceToHost
-    );
+    ));
 
     // --------------------------------------------------
     // 8. Cleanup
     // --------------------------------------------------
 
-    cudaFree(d_input);
-    cudaFree(d_output);
+    // Cleanup
+    CUDA_CHECK(cudaFree(d_input));
+    CUDA_CHECK(cudaFree(d_output));
 
     std::cout << "Blur completed.\n";
 
