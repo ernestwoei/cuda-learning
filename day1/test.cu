@@ -30,11 +30,107 @@ __global__ void blur3x3_tiled(  const float* input,
 
     // ------------------------------------------------
     // 1. Load the center 16x16 pixels
-    // -----------------------------------------------
+    // ------------------------------------------------
     if (x < width && y < height)
         tile[ty+1][tx+1] = input[y*width + x];
     else
         tile[ty+1][tx+1] = 0.0f;
+
+    // ------------------------------------------------
+    // 2. Load top and bottom halo
+    // ------------------------------------------------
+    if (ty == 0)
+    {
+        // Top halo
+        int halo_top_y = y-1;
+
+        if (halo_top_y >= 0 && x < width)
+            tile[0][tx+1] = input[halo_top_y * width+x];
+        else
+            tile[0][tx+1] = 0.0f;
+
+        // Bottom halo
+        int halo_bottom_y = y + TILE_SIZE;
+
+        if (halo_bottom_y < height && x < width)
+            tile[TILE_SIZE+1][tx+1] = input[halo_bottom_y * width+x];
+        else
+            tile[TILE_SIZE+1][tx+1] = 0.0f;
+    }
+
+    // ------------------------------------------------
+    // 3. Load left and right halo
+    // ------------------------------------------------
+    if (tx == 0)
+    {
+        // left halo
+        int halo_left_x = x-1;
+
+        if (halo_left_x >= 0 && y < height)
+            tile[ty+1][0] = input[y*width + halo_left_x];
+        else
+            tile[ty+1][0] = 0.0f;
+
+        // right halo
+        int halo_right_x = x + TILE_SIZE;
+
+        if (halo_right_x < width && y < height)
+            tile[ty+1][TILE_SIZE+1] = input[y*width + halo_right_x];
+        else
+            tile[ty+1][TILE_SIZE+1] = 0.0f;
+    }
+
+    // ------------------------------------------------
+    // 4. Load the four corners
+    // ------------------------------------------------
+    if (tx == 0 && ty == 0)
+    {
+        // Top-left
+        if (x > 0 && y > 0)
+            tile[0][0] = input[(y-1)*width + (x-1)];
+        else
+            tile[0][0] = 0.0f;
+
+        // Top-right
+        if (x + TILE_SIZE < width && y > 0)
+            tile[0][TILE_SIZE + 1] = input[(y-1)*width + (x+TILE_SIZE)];
+        else
+            tile[0][TILE_SIZE + 1] = 0.0f;
+
+        // Bottom-left
+        if (x > 0 && y + TILE_SIZE < height)
+            tile[TILE_SIZE + 1][0] = input[(y+TILE_SIZE)*width + (x-1)];
+        else
+            tile[TILE_SIZE + 1][0] = 0.0f;
+
+        // Bottom-right
+        if (x + TILE_SIZE < width && y + TILE_SIZE < height)
+            tile[TILE_SIZE + 1][TILE_SIZE + 1] = input[(y+TILE_SIZE)*width + (x+TILE_SIZE)];
+        else
+            tile[TILE_SIZE + 1][TILE_SIZE + 1] = 0.0f;
+    }
+
+    // ------------------------------------------------
+    // 5. Wait until the entire is ready
+    // ------------------------------------------------
+    __syncthreads();
+
+    // ------------------------------------------------
+    // 6. Perform the 3x3 blur using shared memory
+    // ------------------------------------------------
+    if (x < width && y < height)
+    {
+        float sum = 0.0f;
+
+        for (int dy = -1; dy <= 1; ++dy)
+        {
+            for (int dx = -1; dx <= 1; ++dx)
+            {
+                sum += tile[ty+1+dy][tx+1+dx];
+            }
+        }
+        output[y*width + x] = sum/9.0f;
+    }
 }
 
 // Custom deleter functor (callable object)
